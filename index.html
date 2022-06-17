@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+
+        <script src="https://d3js.org/d3.v7.min.js"></script>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0-beta1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-0evHe/X+R7YkIZDRvuzKMRqM+OrBnVFBL6DOitfPri4tjfHxaWutUpFmBp4vmVor" crossorigin="anonymous">
+        <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>😷</text></svg>">
+
+        <style>
+            html {
+                width: 99.5vw;
+            }
+
+            header {
+                text-align: center;
+            }
+
+            header mark#title {
+                font-weight: 600;
+                background: none;
+            }
+
+            footer {
+                text-align: right;
+            }
+
+            svg {
+                background: snow;
+            }
+
+            footer span .pride {
+                /* Pride special */
+                background: linear-gradient(to right, red, orange, yellow, green, blue, indigo, black, brown, deepskyblue, pink, silver);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+
+            footer span {
+                width: fit-content;
+                display: inline-block;
+                right: 0;
+                position: relative;
+            }
+
+            #tooltip {
+                background: ghostwhite;
+                border: solid;
+                border-width: 1px;
+                border-radius: 3px;
+                padding: 5px 10px;
+
+                position: absolute;
+                visibility: hidden;
+            }
+
+            #casesCircles .case, 
+            #legends .case {
+                stroke-width: 2px;
+                stroke-linecap: round;
+                cursor: help;
+            }
+
+            #casesCircles .case.no-vax, 
+            #legends .case.no-vax {
+                stroke: red;
+                stroke-dasharray: 5 5;
+            }
+
+            #casesCircles .case.partial-vax,
+            #legends .case.partial-vax {
+                stroke: black;
+                stroke-dasharray: 5 5;
+            }
+
+            #casesCircles .case.full-vax,
+            #legends .case.full-vax {
+                stroke: black;
+            }
+
+            #legends .label {
+                font-size: 10px;
+                transform: translate(15px, 3px);
+            }
+        </style>
+    </head>
+
+    <body>
+        <header class="container-lg">
+            <br>
+            <h1>
+                <mark id="title">Who SNEEZED ❓❓❓ 🤧😷🤒</mark><br>
+                A graph of how Cases 64349 to 64490 infected each other
+            </h1>
+            <br>
+        </header>
+
+        <section class="container-lg">
+            <svg>
+                <defs>
+                    <marker id="end" viewBox="0 -5 10 10" refX="10" refY="0" markerWidth="8" markerHeight="8" orient="auto"><path fill="black" d="M0,-5L10,0L0,5"></path></marker>
+                </defs>
+            </svg>
+        </section>
+
+        <footer class="container-lg">
+            <span>
+                <br>
+                🌈
+                <h6 class="pride">
+                    Data from <a href="https://chi-loong.github.io/CSC3007/assignments/cases-sample.json">CL1</a> & <a href="https://chi-loong.github.io/CSC3007/assignments/links-sample.json">CL2</a>
+                    <br>Best viewed on 1080p display
+                </h6>
+                <br>
+            </span>
+        </footer>
+
+        <div id="tooltip">tips</div> 
+
+        <script>
+
+            let urlCasesJson = "https://raw.githubusercontent.com/kaiongit/CSC3007-assignment4/main/cases-sample.json";
+            let urlLinksJson = "https://raw.githubusercontent.com/kaiongit/CSC3007-assignment4/main/links-sample.json";
+
+            var width = 800, height = 400;
+
+            var svg = d3.select("svg")
+                .attr("viewBox", "0 0 " + width + " " + height)
+            
+            function getMinMax(arr) {
+                return [Math.min(...arr), Math.max(...arr)]
+            }
+
+            function parseData (data) {
+                
+                console.log(...data[1].map(d => d.date).sort((a, b) => a - b))
+
+                // Data preprocessing
+                data[1].forEach(e => {
+                    e.spread = data[0].filter(d => e.id === d.infector).length;
+                    
+                    if (e.vaccinated.includes("no")) e.vaxClass = 0;
+                    if (e.vaccinated.includes("partial")) e.vaxClass = 1;
+                    if (e.vaccinated.includes("yes")) e.vaxClass = 2;
+
+                    e.occupation = e.occupation === "-" ? "NEET" : e.occupation;
+                });
+
+                data[0].forEach(e => {
+                    e.source = e.infector;
+                    e.target = e.infectee;
+                });
+
+                data[1].sort((_) => Math.random() - 0.5);
+
+                return {cases: data[1], links: data[0]}
+            }
+
+            function drawChart({cases, links}) {              
+
+                // Helper functions
+                let genderColor = function (gender) {return gender === "male" ? "deepskyblue" : "pink"};
+                let ageSaturation = d3.scaleLinear().domain(getMinMax(cases.map(d => d.age))).range([100, 30]);
+                let spreadSize = d3.scaleLinear().domain(getMinMax(cases.map(d => d.spread))).range([10, 20]);
+                let vaxxedClass = function (vaxClass) {
+                    if (vaxClass === 0) return "no-vax";
+                    if (vaxClass === 1) return "partial-vax";
+                    if (vaxClass === 2) return "full-vax";
+                };
+
+                let tooltipText = function (p) {
+                    let text = `Case <b>${p.id}</b> is a ${p.age} year old ${p.occupation}. <br>
+                        ${p.gender === "male" ? "He " : "She "}`;
+                    if (p.spread > 0) {
+                        text += `coughed like ${p.spread} times and infected as much. <br>Don't be like them, wear a mask!`;
+                    } else {
+                        text += `caught the virus from Case ${p.id}. <br>Poor fella, get well soon!`;
+                    }
+
+                    return text;
+                }
+
+                // Draw links
+                let linksPaths = svg.append("g")
+                    .attr("id", "linksPaths")
+                    .selectAll("path")
+                    .data(links)
+                    .enter()
+                        .append("path")
+                        .attr("fill", "none")
+                        .attr("stroke", "black")
+                        .attr("marker-end", "url(#end)");
+
+                // Draw nodes
+                let casesCircles = svg.append("g")
+                    .attr("id", "casesCircles")
+                    .selectAll("circle")
+                    .data(cases)
+                    .enter()
+                        .append("circle")
+                        .attr("r", function (d) {
+                            d.radius = spreadSize(d.spread)
+                            return d.radius
+                        })
+                        .style("fill", d => genderColor(d.gender))
+                        .style("filter", d => `saturate(${ageSaturation(d.age)}%)`)
+                        .attr("class", d => vaxxedClass(d.vaxClass))
+                        .classed("case", true)
+                    .call(d3.drag()
+                        .on("start", dragstarted)
+                        .on("drag", dragged)
+                        .on("end", dragended));
+                
+                // Bing bang boom
+                let simulation = d3.forceSimulation()
+                    .nodes(cases)
+                    .force("center", d3.forceCenter().x(width / 2).y(height / 2))
+                    .force("link", d3.forceLink(links).id(d => d.id).distance(50))
+                    .force("charge", d3.forceManyBody().strength(-10))
+                    .force("collide", d3.forceCollide().strength(0.1).radius(30))
+                    .on("tick", function(d) {                
+                        casesCircles
+                            .attr("transform", d => `translate(${d.x},${d.y})`);
+
+                        linksPaths
+                            .attr("d", function (d) {
+                                // Total difference in x and y from source to target
+                                diffX = d.target.x - d.source.x;
+                                diffY = d.target.y - d.source.y;
+
+                                // Length of path from center of source node to center of target node
+                                pathLength = Math.sqrt((diffX * diffX) + (diffY * diffY));
+
+                                // x and y distances from center to outside edge of target node
+                                offsetHeadX = (diffX * d.source.radius) / pathLength;
+                                offsetHeadY = (diffY * d.source.radius) / pathLength;
+
+                                offsetTailX = (diffX * d.target.radius) / pathLength;
+                                offsetTailY = (diffY * d.target.radius) / pathLength;
+
+                                return "M" + (d.source.x + offsetHeadX)+ "," + (d.source.y + offsetHeadY) + "L" + (d.target.x - offsetTailX) + "," + (d.target.y - offsetTailY);
+                            });
+                        });
+
+                // Add drag functions
+                function dragstarted(event, d) {
+                    if (!event.active) simulation.alphaTarget(0.3).restart();
+                    d.fx = d.x;
+                    d.fy = d.y;
+                }
+
+                function dragged(event, d) {
+                    d.fx = event.x;
+                    d.fy = event.y;
+                }
+
+                function dragended(event, d) {
+                    if (!event.active) simulation.alphaTarget(0);
+                    d.fx = null;
+                    d.fy = null;
+                }
+
+                // Add mouseover functions (can afford to make same style as above but lazy)
+                let tooltip = d3.select("#tooltip");
+
+                casesCircles
+                    .on("mouseover", function(e, d) {
+                        tooltip.style("visibility", "visible");
+
+                        d3.select(event.currentTarget)
+                            .classed("selected", true)
+
+                        linksPaths
+                            .style("visibility", "hidden")
+                            .filter(l => l.source.id === d.id || l.target.id === d.id)
+                            .style("visibility", "visible");
+                    })
+                    .on("mouseout", function() {
+                        tooltip.style("visibility", "hidden");
+
+                        d3.select(event.currentTarget)
+                            .classed("selected", false)
+
+                        linksPaths.style("visibility", "visible")
+                    })
+                    .on("mousemove", function(e, d) {
+                        tooltip
+                            .style("top", (e.pageY + 10) + "px")
+                            .style("left", (e.pageX + 10) + "px")
+                            .html(tooltipText(d));
+                    });
+
+            // Draw Legend
+            let legendPositionY = height - 20 - 3 * (20 + 5);
+            let legendPositionX = 20;
+
+            let legendsData = [
+                {age: Math.min(...cases.map(d => d.age)), gender: "male", vaxClass: 0, label: "Young male with no vax"}, 
+                {age: Math.max(...cases.map(d => d.age)), gender: "male", vaxClass: 1, label: "Older male with partial vax"}, 
+                {age: Math.min(...cases.map(d => d.age)), gender: "female", vaxClass: 2, label: "Young female with full vax"}, 
+            ];
+            
+            let legends = svg.append("g").attr("id", "legends");
+
+            let legendsNodes = legends
+                .selectAll("circle")
+                .data(legendsData)
+                .enter();
+            
+            legendsNodes
+                .append("circle")
+                    .attr("r", 10)
+                    .style("fill", d => genderColor(d.gender))
+                    .style("filter", d => `saturate(${ageSaturation(d.age)}%)`)
+                    .attr("class", d => vaxxedClass(d.vaxClass))
+                    .classed("case", true)
+                    .attr("cx", legendPositionX)
+                    .attr("cy", () => { legendPositionY += 25; return legendPositionY });
+            
+            legendPositionY = height - 20 - 3 * (20 + 5);
+
+            legendsNodes
+                .append("text")
+                    .attr("class", "label")
+                    .attr("dx", legendPositionX)
+                    .attr("dy", () => { legendPositionY += 25; return legendPositionY })
+                    .text(function(d) { return d.label });
+                    
+            }
+
+            // Load external data
+            Promise.all([d3.json(urlLinksJson), d3.json(urlCasesJson)])
+                .then(function (d) { 
+                    return parseData(d);
+                })
+                .then(drawChart);
+
+        </script>
+
+    </body>
+</html>
